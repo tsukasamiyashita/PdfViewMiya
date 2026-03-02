@@ -7,14 +7,16 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap, QPainter, QAction, QKeySequence, QCursor
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
-from PyQt6.QtCore import Qt, QTimer, QRect, QEvent
+from PyQt6.QtCore import Qt, QTimer, QRect, QEvent, QUrl
 
 class PdfEditMiya(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PdfEditMiya")
-        # 最大化解除時のデフォルトサイズとして保持
         self.resize(1200, 800) 
+        
+        # ドラッグ＆ドロップを有効化
+        self.setAcceptDrops(True)
         
         # 状態管理
         self.doc = None
@@ -42,19 +44,6 @@ class PdfEditMiya(QMainWindow):
         self.toolbar = QToolBar("Main Toolbar")
         self.toolbar.setMovable(False)
         self.addToolBar(self.toolbar)
-
-        # ツールバー：ファイル操作
-        open_action = QAction("📁 開く", self)
-        open_action.setShortcut(QKeySequence.StandardKey.Open)
-        open_action.triggered.connect(self.open_pdf)
-        self.toolbar.addAction(open_action)
-
-        print_action = QAction("🖨️ 印刷", self)
-        print_action.setShortcut(QKeySequence.StandardKey.Print)
-        print_action.triggered.connect(self.print_pdf)
-        self.toolbar.addAction(print_action)
-
-        self.toolbar.addSeparator()
 
         # ツールバー：表示モード（目次・単一ページ）
         self.toc_action = QAction("📑 目次", self)
@@ -162,6 +151,21 @@ class PdfEditMiya(QMainWindow):
 
     def _init_menu(self):
         menubar = self.menuBar()
+        
+        # ファイルメニュー
+        file_menu = menubar.addMenu("ファイル(&F)")
+        
+        open_action = QAction("📁 開く", self)
+        open_action.setShortcut(QKeySequence.StandardKey.Open)
+        open_action.triggered.connect(self.open_pdf)
+        file_menu.addAction(open_action)
+        
+        print_action = QAction("🖨️ 印刷", self)
+        print_action.setShortcut(QKeySequence.StandardKey.Print)
+        print_action.triggered.connect(self.print_pdf)
+        file_menu.addAction(print_action)
+        
+        # ヘルプメニュー
         help_menu = menubar.addMenu("ヘルプ(&H)")
         
         readme_action = QAction("Readme", self)
@@ -172,16 +176,34 @@ class PdfEditMiya(QMainWindow):
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
 
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls:
+            file_path = urls[0].toLocalFile()
+            if file_path.lower().endswith('.pdf'):
+                self.load_pdf(file_path)
+            else:
+                QMessageBox.warning(self, "エラー", "PDFファイルのみ対応しています。")
+        else:
+            super().dropEvent(event)
+
     def show_readme(self):
         readme_text = """<h2>PdfEditMiya</h2>
         <p>起動と描画の高速化に特化し、スクロール遅延ロード（Lazy Loading）を採用したデスクトップPDFビューアです。</p>
         <h3>【主な機能】</h3>
         <ul>
+        <li><b>ドラッグ＆ドロップ対応</b>：ファイルを画面に直接ドロップして読み込み。</li>
         <li><b>マウスホイールによるページ切り替え</b>：単一ページ表示モード時、ページ最上部/最下部でのホイール操作で前後のページへジャンプ。</li>
         <li><b>A3・A4混在の自動サイズ調整</b>：単一ページ表示時、ページの物理サイズに合わせて自動ズーム。</li>
         <li><b>高度なスクロール操作</b>：Ctrl+ホイールでズーム、Shift+ホイールで横スクロール。上下矢印キーで高速スクロール。</li>
         <li><b>ドラッグ移動（パン機能）</b>：マウスの左クリックドラッグで直感的に画面を移動。</li>
-        <li><b>その他</b>：目次表示、回転、各種ズーム、印刷など。</li>
+        <li><b>その他</b>：エクスプローラーからの直接起動、目次表示、回転、各種ズーム、印刷など。</li>
         </ul>
         """
         msg_box = QMessageBox(self)
@@ -194,41 +216,33 @@ class PdfEditMiya(QMainWindow):
         QMessageBox.about(self, "バージョン情報", "<b>PdfEditMiya</b><br><br>バージョン: v1.0.0<br>Powered by PyQt6 & PyMuPDF")
 
     def eventFilter(self, obj, event):
-        """マウスおよびキーボードによる高度なスクロール・ナビゲーション操作を処理する"""
         if obj in (self.scroll_area, self.scroll_area.viewport()):
-            # 1. マウスホイール操作
             if event.type() == QEvent.Type.Wheel:
                 modifiers = QApplication.keyboardModifiers()
                 if modifiers == Qt.KeyboardModifier.ControlModifier:
-                    # Ctrl + ホイール：ズーム
                     if event.angleDelta().y() > 0:
                         self.zoom_in()
                     else:
                         self.zoom_out()
                     return True
                 elif modifiers == Qt.KeyboardModifier.ShiftModifier:
-                    # Shift + ホイール：横スクロール
                     h_bar = self.scroll_area.horizontalScrollBar()
                     h_bar.setValue(h_bar.value() - event.angleDelta().y())
                     return True
                 else:
-                    # 修飾キーなしの通常のホイール操作
                     if self.is_single_page_mode:
                         v_bar = self.scroll_area.verticalScrollBar()
                         delta = event.angleDelta().y()
                         
-                        # 単一ページモード時、ページ最上部で上スクロールすると「前へ」
                         if delta > 0: 
                             if v_bar.value() <= v_bar.minimum():
                                 self.prev_page()
                                 return True
-                        # 単一ページモード時、ページ最下部で下スクロールすると「次へ」
                         elif delta < 0: 
                             if v_bar.value() >= v_bar.maximum():
                                 self.next_page()
                                 return True
 
-            # 2. キーボードショートカット
             elif event.type() == QEvent.Type.KeyPress:
                 v_bar = self.scroll_area.verticalScrollBar()
                 
@@ -262,7 +276,6 @@ class PdfEditMiya(QMainWindow):
                     self.next_page()
                     return True
 
-            # 3. マウスのドラッグによる画面移動（パン）
             elif event.type() == QEvent.Type.MouseButtonPress:
                 if event.button() == Qt.MouseButton.LeftButton:
                     self.is_panning = True
@@ -274,6 +287,7 @@ class PdfEditMiya(QMainWindow):
                 if self.is_panning and self.last_mouse_pos is not None:
                     delta = event.position() - self.last_mouse_pos
                     h_bar = self.scroll_area.horizontalScrollBar()
+                    v_bar = self.scroll_area.verticalScrollBar()
                     h_bar.setValue(int(h_bar.value() - delta.x()))
                     v_bar.setValue(int(v_bar.value() - delta.y()))
                     self.last_mouse_pos = event.position()
@@ -396,7 +410,7 @@ class PdfEditMiya(QMainWindow):
             label = QLabel()
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             label.setStyleSheet("""
-                background-color: white; 
+                background-color: white;
                 border: 1px solid #999;
             """)
             label.setScaledContents(True)
@@ -624,5 +638,10 @@ class PdfEditMiya(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     viewer = PdfEditMiya()
+    
+    # コマンドライン引数がある場合（エクスプローラーから開かれた場合）にPDFをロード
+    if len(sys.argv) > 1:
+        viewer.load_pdf(sys.argv[1])
+        
     viewer.showMaximized()
     sys.exit(app.exec())
