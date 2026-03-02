@@ -41,7 +41,7 @@ jobs:
         pyinstaller 
         --onefile 
         --noconsole 
-        --name "PdfViewMiya-v1.0.0" 
+        --name "PdfViewMiya-v1.1.0" 
         --add-data "readme.md;."
         --hidden-import openpyxl 
         --hidden-import PIL 
@@ -54,5 +54,5 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: PdfViewMiya-v1.0.0  # ←★変更：フォルダ名
-        path: dist/PdfViewMiya-v1.0.0.exe # ←★変更：上で付けた名前 + .exe にします
+        name: PdfViewMiya-v1.1.0  # ←★変更：フォルダ名
+        path: dist/PdfViewMiya-v1.1.0.exe # ←★変更：上で付けた名前 + .exe にします
